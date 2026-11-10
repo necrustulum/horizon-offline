@@ -3173,23 +3173,64 @@ pub fn client(tag: &str) -> Result<Command, String> {
 /// What the command line adds to a refusal to play for want of an account.
 pub const SIGN_IN_HINT: &str = "Sign in with `horizon-launcher account sign-in`.";
 
+/// Where a launch's session comes from.
+pub enum SignIn<'a> {
+    /// The owner gate: the selected account's session, or `who`'s for this launch only.
+    Account { who: Option<&'a str> },
+    /// `play --offline`: no gate and no session; the game plays as `name`, or as the name it
+    /// keeps. For offline play, LAN and local test stands.
+    Offline { name: Option<&'a str> },
+}
+
 /// [`client`], playing as `who` for this launch only (`play --account`).
 pub fn client_as(tag: &str, who: Option<&str>) -> Result<Command, String> {
+    client_with(tag, SignIn::Account { who })
+}
+
+/// [`client`] without the owner gate (`play --offline`): no session file, and `name` as the
+/// local player. Online servers (`online-mode=true`) still refuse a player with no session;
+/// LAN and offline-mode servers take it.
+pub fn client_offline(tag: &str, name: Option<&str>) -> Result<Command, String> {
+    client_with(tag, SignIn::Offline { name })
+}
+
+/// [`client_as`] or [`client_offline`], by where the session comes from.
+pub fn client_with(tag: &str, sign_in: SignIn<'_>) -> Result<Command, String> {
+    client_with_gate(tag, sign_in, &|who| {
+        let hint = |refused: String| format!("{refused} {}", crate::i18n::tr(SIGN_IN_HINT));
+        match who {
+            None => account::session_for_game(&game_home()).map_err(|refused| {
+                // A keyring that didn't answer isn't a missing sign-in (#12179).
+                match refused.keyring {
+                    Some(why) => why,
+                    None => hint(refused.to_string()),
+                }
+            }),
+            Some(who) => account::session_for_game_as(&game_home(), who).map_err(hint),
+        }
+    })
+}
+
+/// [`client_with`] with the owner gate given, so the test of `play --offline` can pass one that
+/// refuses: a launch that reaches it shows.
+fn client_with_gate(
+    tag: &str,
+    sign_in: SignIn<'_>,
+    gate: &dyn Fn(Option<&str>) -> Result<account::GameSession, String>,
+) -> Result<Command, String> {
     if let Some(error) = game_architecture_launch_error(tag) {
         return Err(error);
     }
-    play_step("reading the sign-in");
-    let hint = |refused: String| format!("{refused} {}", crate::i18n::tr(SIGN_IN_HINT));
-    let session = match who {
-        None => account::session_for_game(&game_home()).map_err(|refused| {
-            // A keyring that didn't answer isn't a missing sign-in (#12179).
-            match refused.keyring {
-                Some(why) => why,
-                None => hint(refused.to_string()),
-            }
-        }),
-        Some(who) => account::session_for_game_as(&game_home(), who).map_err(hint),
-    }?;
+    let (session, name) = match sign_in {
+        SignIn::Account { who } => {
+            play_step("reading the sign-in");
+            (Some(gate(who)?), None)
+        }
+        SignIn::Offline { name } => {
+            play_step("starting without a session");
+            (None, name)
+        }
+    };
     if let Err(e) = need_prepared(tag) {
         account::discard_unread_sessions();
         return Err(e);
@@ -3198,18 +3239,31 @@ pub fn client_as(tag: &str, who: Option<&str>) -> Result<Command, String> {
     complete_assets(tag);
     crate::browser::horizon::before_play(&game_home());
     let mut cmd = client_command(tag);
-    if let Some(file) = session.file {
+    apply_session(&mut cmd, session.as_ref(), name);
+    append_game_args(&mut cmd);
+    Ok(cmd)
+}
+
+/// The account or the local name a launch plays as: the playing account's session file and the
+/// other accounts' sessions for splitscreen, or `--name` when there is no session
+/// (`play --offline`). An account's own name wins over `name`.
+fn apply_session(cmd: &mut Command, session: Option<&account::GameSession>, name: Option<&str>) {
+    let Some(session) = session else {
+        if let Some(name) = name {
+            cmd.arg("--name").arg(name);
+        }
+        return;
+    };
+    if let Some(file) = &session.file {
         cmd.arg("--session-file").arg(file);
     }
-    cmd.envs(session.env);
-    if let Some(e) = session.offline {
+    cmd.envs(session.env.iter().map(|(k, v)| (k, v)));
+    if let Some(e) = &session.offline {
         eprintln!("Playing offline: {e}");
     }
     if let Some(e) = account::take_unsaved() {
         eprintln!("{e}");
     }
-    append_game_args(&mut cmd);
-    Ok(cmd)
 }
 
 /// Start the game straight into a friend's world: `--server friend:CODE`.
@@ -4230,8 +4284,12 @@ pub enum Msg {
     AccountHead(String, Option<String>, Option<Vec<[u8; 4]>>, bool),
     AccountRemoved(String, u64, Result<bool, String>),
     /// The owner gate's answer for the game about to start: the selected account's session
-    /// file (none = offline) and why it plays offline, if it does.
-    Session(Result<crate::account::GameSession, crate::account::NoOwner>),
+    /// file (none = offline) and why it plays offline, if it does. `without_account`: Play ran
+    /// in the expert mode (`Settings::expert_offline_play`), so the gate was never asked.
+    Session {
+        session: Result<crate::account::GameSession, crate::account::NoOwner>,
+        without_account: bool,
+    },
     /// A modpack step's line (`modpacks`).
     PackLine(String),
     /// A modpack step ended: the pack as it now is.
@@ -4440,6 +4498,11 @@ pub struct Settings {
     /// default. Appended after the launcher's own arguments, so they can add to or override them.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub game_args: String,
+    /// The Settings page's expert mode: Play starts the game with no Microsoft session
+    /// (`play --offline`), as the name the game keeps. Off by default, because nothing checks
+    /// that the player owns the game and online servers (`online-mode=true`) refuse them.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub expert_offline_play: bool,
     /// The proxy every download goes through (`proxy`), such as `http://127.0.0.1:7890` or
     /// `socks5://127.0.0.1:1080`.
     /// Unset means none: the environment's `HTTPS_PROXY` and `HTTP_PROXY` apply instead.
@@ -7203,6 +7266,68 @@ pub fn {f}("
         assert_eq!(
             envs.get(OsStr::new("PIPEWIRE_PROPS")),
             Some(&Some(OsStr::new("kept")))
+        );
+    }
+
+    /// `play --offline` skips the owner gate (`account::session_for_game`), while an account
+    /// launch still asks it first: the gate given here refuses, and only the account launch
+    /// ever reaches it.
+    #[test]
+    fn offline_play_skips_the_owner_gate() {
+        let asked = std::cell::Cell::new(0);
+        let gate = |_: Option<&str>| -> Result<account::GameSession, String> {
+            asked.set(asked.get() + 1);
+            Err("the owner gate was asked".into())
+        };
+        // Not installed: the refusal that reaches here is the one after the gate.
+        let refused = client_with_gate(
+            "v0.0.0-never-installed",
+            SignIn::Offline {
+                name: Some("Steve"),
+            },
+            &gate,
+        )
+        .unwrap_err();
+        assert_eq!(asked.get(), 0, "--offline must not ask the owner gate");
+        assert!(refused.contains("not prepared"), "{refused}");
+        let refused = client_with_gate(
+            "v0.0.0-never-installed",
+            SignIn::Account { who: None },
+            &gate,
+        )
+        .unwrap_err();
+        assert_eq!(asked.get(), 1, "an account launch asks the owner gate");
+        assert_eq!(refused, "the owner gate was asked");
+    }
+
+    /// A launch without a session names the local player and carries no `--session-file`; one
+    /// with an account keeps the session file and the account's own name.
+    #[test]
+    fn a_launch_without_a_session_names_the_player_and_carries_no_session_file() {
+        let args = |cmd: &Command| -> Vec<String> {
+            cmd.get_args()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect()
+        };
+        let mut cmd = Command::new("horizon-client");
+        apply_session(&mut cmd, None, Some("Steve"));
+        assert_eq!(args(&cmd), ["--name", "Steve"]);
+
+        let session = account::GameSession {
+            file: Some(PathBuf::from("/run/sessions/session-01.json")),
+            ..account::GameSession::default()
+        };
+        let mut cmd = Command::new("horizon-client");
+        apply_session(&mut cmd, Some(&session), Some("Steve"));
+        let args = args(&cmd);
+        assert!(
+            args.windows(2)
+                .any(|w| w == ["--session-file", "/run/sessions/session-01.json"]),
+            "{args:?}"
+        );
+        assert!(
+            !args.iter().any(|a| a == "--name"),
+            "the account's own name plays: {args:?}"
         );
     }
 }

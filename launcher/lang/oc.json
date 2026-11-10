@@ -1238,5 +1238,8 @@
   "In the last build, on Horizon {commit} for {mods}, not on {horizon}": "Dins la darrièra compilacion, sus Horizon {commit} per {mods}, pas sus {horizon}",
   "In the last build, on {horizon}": "Dins la darrièra compilacion, sus {horizon}",
   "Duplicate native mod {id}.": "Duplicate native mod {id}.",
-  "Native and content mod ids differ.": "Native and content mod ids differ."
+  "Native and content mod ids differ.": "Native and content mod ids differ.",
+  "Expert mode: launch without a session": "Expert mode: launch without a session",
+  "Play starts the game without a Microsoft session, as the name it keeps. For offline play, LAN and local test stands: online servers (online-mode=true) refuse it. Nothing checks that you own Minecraft: Java Edition.": "Play starts the game without a Microsoft session, as the name it keeps. For offline play, LAN and local test stands: online servers (online-mode=true) refuse it. Nothing checks that you own Minecraft: Java Edition.",
+  "the expert mode skipped the Microsoft sign-in, so online servers (online-mode=true) refuse this player": "the expert mode skipped the Microsoft sign-in, so online servers (online-mode=true) refuse this player"
 }

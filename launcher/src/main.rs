@@ -1228,7 +1228,10 @@ impl Launcher {
                         }
                     }
                 }
-                Msg::Session(session) => {
+                Msg::Session {
+                    session,
+                    without_account,
+                } => {
                     self.load_auth_statuses(false);
                     if let Some(tag) = self.starting_client.take() {
                         let mut cmd = backend::client_command(&tag);
@@ -1247,7 +1250,10 @@ impl Launcher {
                                 continue;
                             }
                         };
-                        self.owner = Some(true);
+                        // The gate proved an owner; the expert mode never asked it.
+                        if !without_account {
+                            self.owner = Some(true);
+                        }
                         if let Some(file) = file {
                             cmd.arg("--session-file").arg(file);
                         }
@@ -1904,10 +1910,11 @@ impl Launcher {
             Some(std::time::SystemTime::now() - std::time::Duration::from_secs(2));
         // What the resources lack (built-in packs, panorama, sounds) and the session (a network
         // round trip when the token needs renewing) come first; `drain` starts the game when the
-        // session arrives.
+        // session arrives. The expert mode skips the session and the owner gate (`play --offline`).
         self.starting_client = Some(tag.clone());
         self.play_pressed = Some(Instant::now());
         let tx = self.tx.clone();
+        let without_account = self.settings.expert_offline_play;
         // Registry mods update before the game reads them (`horizon::auto`); native mods only
         // at start, where a build can follow.
         let auto = self
@@ -1931,9 +1938,20 @@ impl Launcher {
                 }
             }
             backend::play_step("reading the sign-in");
-            let session = account::session_for_game(&backend::game_home());
+            let session = if without_account {
+                // No gate and no session: the game plays as the name it keeps.
+                Ok(account::GameSession {
+                    offline: Some(tr("the expert mode skipped the Microsoft sign-in, so online servers (online-mode=true) refuse this player").to_string()),
+                    ..Default::default()
+                })
+            } else {
+                account::session_for_game(&backend::game_home())
+            };
             backend::play_step("starting the game");
-            let _ = tx.send(Msg::Session(session));
+            let _ = tx.send(Msg::Session {
+                session,
+                without_account,
+            });
         });
     }
 
@@ -4055,6 +4073,7 @@ impl Launcher {
                     .child(group("Game", "gamepad"))
                     .child(self.game_architecture_row(n + 5, cx))
                     .child(self.game_args_row(n + 6, cx))
+                    .child(self.expert_offline_row(n + 7, cx))
                     .child(group("AI", "terminal"))
                     .child(self.no_ai_row(n + 6, cx))
                     .child(group("About", "info-box"))
@@ -4239,6 +4258,32 @@ impl Launcher {
                     .into_any_element(),
             ),
             Some(picker.into_any_element()),
+            &t,
+        )
+    }
+
+    /// The expert mode (`Settings::expert_offline_play`): Play starts the game with no
+    /// Microsoft session, as `play --offline` does. Off unless the player turns it on, after
+    /// the warning that nothing checks ownership.
+    fn expert_offline_row(&self, n: usize, cx: &mut Context<Self>) -> Div {
+        let t = self.theme;
+        let on = self.settings.expert_offline_play;
+        let toggle = switch("expert-offline", on, &t).on_click(cx.listener(
+            |this, _: &ClickEvent, _, cx| {
+                this.settings.expert_offline_play = !this.settings.expert_offline_play;
+                this.save_settings();
+                cx.notify();
+            },
+        ));
+        index_row(
+            n,
+            tr("Expert mode: launch without a session"),
+            Some(
+                div()
+                    .child(tr("Play starts the game without a Microsoft session, as the name it keeps. For offline play, LAN and local test stands: online servers (online-mode=true) refuse it. Nothing checks that you own Minecraft: Java Edition."))
+                    .into_any_element(),
+            ),
+            Some(toggle.into_any_element()),
             &t,
         )
     }

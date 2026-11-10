@@ -104,9 +104,38 @@ possible; the launcher just doesn't offer it on its own.
   save drops them (`offline`, `offline_selected`, `looks` and `skins/` in accounts.json's folder,
   `dev_offline` in settings.json).
 - **Who isn't affected:** the game binary itself (`horizon-client`, `horizon-ctl launch`, the
-  harnesses, CI), the dedicated server and `horizon-server`, the website. There is no bypass flag:
-  the launcher's tests use accounts in a memory store (`MemoryStore`, and `HORIZON_NO_KEYCHAIN`
-  for the CLI and MCP tests, which then have no owner).
+  harnesses, CI), the dedicated server and `horizon-server`, the website. There is no bypass
+  flag on the normal path: the launcher's tests use accounts in a memory store (`MemoryStore`,
+  and `HORIZON_NO_KEYCHAIN` for the CLI and MCP tests, which then have no owner). The one
+  explicit way past the gate is `play --offline`, below.
+
+## Offline play, on request
+
+Play's default is the gate above, unchanged: no flag, no session, no game unless an account in
+the launcher owns Java Edition. A launch can also be started without a session, on purpose, for
+offline play, LAN games in a closed network and local test stands:
+
+- **`horizon-launcher play --offline --name Steve`** skips `account::launch` for that launch
+  only (`backend::client_offline`): no request to the Minecraft services, no `--session-file`,
+  and the game plays as `--name` (or as the name it keeps in `horizon-player.txt` when no name
+  is given). Past the gate, the rest of the launch is the same: the version must be prepared
+  already, its missing built-in assets are completed, registry mods update and the instance's
+  options apply.
+- **The window** has the same switch in Settings: *Expert mode: launch without a session*
+  (`Settings::expert_offline_play`, `offline-play` in `horizon-launcher settings`). Off by
+  default, with the warning under it.
+- **Refused with it:** `--account` and `--join`, which need the session they name, and a Java
+  instance, which starts Minecraft: Java Edition through its own path
+  (`backend::java_game`), not this one.
+- **What it does not do:** it never downloads or prepares game files — preparing may still use
+  Mojang's download for an owner (`prepare --download`, below) — and it checks no ownership,
+  which is the point of the mode. Online servers (`online-mode=true`) refuse a player with no
+  session; a LAN world opened from the game, a dedicated server with `online-mode=false` and
+  local test stands accept the name.
+- **Everything else stays gated:** Home, instances and packs, `modpack play`, the MCP's `play`
+  and every `play` without `--offline` still ask `account::launch`/`launch_for_game` and start
+  only for an account that owns the game. `backend::client_with_gate` takes the gate as an
+  argument so the tests can show that `--offline` never calls it.
 
 ## Downloading the game for an owner
 

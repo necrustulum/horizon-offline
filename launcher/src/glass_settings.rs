@@ -449,6 +449,7 @@ impl Launcher {
         let game = card()
             .child(self.game_architecture_row(n, cx))
             .child(self.game_args_row(n + 1, cx))
+            .child(self.expert_offline_row(n + 2, cx))
             .child(self.mods_auto_update_row(cx))
             .child(self.native_mods_row(cx));
         let ai = card()

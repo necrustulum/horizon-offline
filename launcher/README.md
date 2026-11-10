@@ -481,7 +481,11 @@ and starts nothing. Settings → Accounts signs in: the launcher shows a code, y
 microsoft.com/link, and the launcher checks that the account owns the game. It asks again at every
 Play, with the token renewal; with no network the last answer stands, and a "doesn't own" blocks
 at once. The account that plays must own the game itself, and it plays online-mode servers under
-your own name and skin, LAN and offline-mode servers too. The game binary started directly (`horizon-client`,
+your own name and skin, LAN and offline-mode servers too. An explicit expert mode skips the check
+— `horizon-launcher play --offline --name NAME`, or Settings → *Expert mode: launch without a
+session* — and starts the game with no session, for offline play, LAN and local test stands
+([docs/microsoft-account.md](../docs/microsoft-account.md#offline-play-on-request)); online-mode
+servers refuse such a player. The game binary started directly (`horizon-client`,
 `horizon-ctl launch`), the harnesses and the servers don't go through this check. Tokens live in the system keychain (Keychain,
 Credential Manager, or the Secret Service on Linux), never in a log or the command line;
 `accounts.json` in the data folder keeps only names and UUIDs. On Linux without a keychain they go

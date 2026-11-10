@@ -718,7 +718,8 @@ enum Cmd {
         #[arg(long)]
         version: Option<String>,
     },
-    /// Start the client (needs a signed-in Microsoft account that owns Minecraft: Java Edition)
+    /// Start the client (needs a signed-in Microsoft account that owns Minecraft: Java Edition,
+    /// or `--offline` for offline play)
     Play {
         #[arg(long)]
         version: Option<String>,
@@ -744,8 +745,16 @@ enum Cmd {
         arg: Vec<String>,
         /// Play this launch as this signed-in account (its name or UUID), without changing
         /// the one `account select` picked: several games can play as several accounts at once
-        #[arg(long, value_name = "WHO")]
+        #[arg(long, value_name = "WHO", conflicts_with = "offline")]
         account: Option<String>,
+        /// Play with no Microsoft session (expert): for offline play, LAN and local test
+        /// stands. Nothing checks that you own Minecraft: Java Edition, and online servers
+        /// (online-mode=true) refuse the game; the version must be prepared already
+        #[arg(long, conflicts_with = "join")]
+        offline: bool,
+        /// The local player name to play as with --offline (default: the name the game keeps)
+        #[arg(long, value_name = "NAME", requires = "offline")]
+        name: Option<String>,
     },
     /// Run a dedicated server here; type commands into its console
     Server {
@@ -833,7 +842,9 @@ enum Cmd {
     /// shows Horizon's landscape), native-cache-gib N (combined native compilation cache limit
     /// in GiB, default 30; 0 disables automatic cleanup), native-profile performance|dev|release (the profile native
     /// mods build with: performance is incremental, dev rebuilds a mod quickest for a slow game,
-    /// release is slowest to build and slightly faster to play)
+    /// release is slowest to build and slightly faster to play), offline-play on|off (the expert
+    /// mode: Play starts the game with no Microsoft session, as the name the game keeps; online
+    /// servers refuse it)
     Settings {
         #[arg(value_parser = SETTING_KEYS)]
         key: Option<String>,
@@ -981,7 +992,7 @@ pub fn command() -> clap::Command {
 pub const AI_COMMANDS: [&str; 2] = ["mcp", "agent-config"];
 
 /// The keys `settings` sets.
-const SETTING_KEYS: [&str; 15] = [
+const SETTING_KEYS: [&str; 16] = [
     "selected-version",
     "minecraft-dir",
     "server-dir",
@@ -997,6 +1008,7 @@ const SETTING_KEYS: [&str; 15] = [
     "background",
     "native-profile",
     "native-cache-gib",
+    "offline-play",
 ];
 
 fn on_off(value: &str) -> Result<bool, String> {
@@ -1027,6 +1039,7 @@ fn set_setting(s: &mut backend::Settings, key: &str, value: &str) -> Result<(), 
             }
         }
         "opening-animation" => s.skip_opening = !on_off(value)?,
+        "offline-play" => s.expert_offline_play = on_off(value)?,
         "game-architecture" => {
             let choice = backend::GameArchitecture::parse(value).ok_or_else(|| {
                 tr("Say auto, x64 or arm64 for the game architecture.").to_string()
@@ -1130,6 +1143,7 @@ fn settings_json(s: &backend::Settings) -> serde_json::Value {
         "background": horizon_launcher::themes::background(&backend::data_dir(), s.background.as_deref()),
         "native_profile": native_mods::Profile::chosen(s).name(),
         "native_cache_gib": s.native_cache_gib.unwrap_or(native_mods::DEFAULT_CACHE_GIB),
+        "offline_play": s.expert_offline_play,
         "no_ai": backend::no_ai(),
     })
 }
@@ -1461,6 +1475,8 @@ fn execute(command: Cmd, as_json: bool) -> Result<(), String> {
             server,
             arg,
             account,
+            offline,
+            name,
         } => {
             let instance = match instance {
                 Some(name) => instances::find(&name)?,
@@ -1472,10 +1488,11 @@ fn execute(command: Cmd, as_json: bool) -> Result<(), String> {
                     || join.is_some()
                     || creative
                     || account.is_some()
+                    || offline
                 {
                     return Err(format!(
                         "{} plays Minecraft: Java Edition: --version, --world, --creative, \
-                         --join and --account are for Horizon instances.",
+                         --join, --account and --offline are for Horizon instances.",
                         instance.name
                     ));
                 }
@@ -1512,10 +1529,19 @@ fn execute(command: Cmd, as_json: bool) -> Result<(), String> {
                 ),
                 None => None,
             };
-            let mut cmd = backend::client_as(
-                &instance.resolve_version(version.as_deref())?,
-                who.as_deref(),
-            )?;
+            if offline && name.as_deref().is_some_and(|n| n.trim().is_empty()) {
+                return Err("--name: say the local player name, for example Steve".into());
+            }
+            let tag = instance.resolve_version(version.as_deref())?;
+            let mut cmd = if offline {
+                eprintln!(
+                    "Playing offline: no Microsoft session. Online servers (online-mode=true) \
+                     refuse this player; LAN and offline-mode servers accept it."
+                );
+                backend::client_offline(&tag, name.as_deref())?
+            } else {
+                backend::client_as(&tag, who.as_deref())?
+            };
             instances::apply(&mut cmd, &instance)?;
             if let Some(code) = join {
                 backend::join_friend(&mut cmd, &code)?;
@@ -3694,12 +3720,64 @@ mod tests {
     }
 
     #[test]
+    fn settings_takes_the_expert_offline_mode() {
+        let mut settings = backend::Settings::default();
+        assert!(!settings.expert_offline_play, "off by default");
+        set_setting(&mut settings, "offline-play", "on").unwrap();
+        assert!(settings.expert_offline_play);
+        set_setting(&mut settings, "offline-play", "off").unwrap();
+        assert!(!settings.expert_offline_play);
+        assert_eq!(
+            set_setting(&mut settings, "offline-play", "yes").unwrap_err(),
+            "yes: say on or off"
+        );
+    }
+
+    #[test]
     fn play_takes_an_account_for_one_launch() {
         let cli = Cli::try_parse_from(["horizon-launcher", "play", "--account", "Alex"]).unwrap();
         match cli.command {
             Some(Cmd::Play { account, .. }) => assert_eq!(account.as_deref(), Some("Alex")),
             _ => panic!("not play"),
         }
+    }
+
+    /// `play --offline` takes the local name, and the default launch stays an account launch:
+    /// no flag, no name.
+    #[test]
+    fn play_offline_takes_a_local_name() {
+        let cli = Cli::try_parse_from(["horizon-launcher", "play", "--offline", "--name", "Steve"])
+            .unwrap();
+        match cli.command {
+            Some(Cmd::Play { offline, name, .. }) => {
+                assert!(offline);
+                assert_eq!(name.as_deref(), Some("Steve"));
+            }
+            _ => panic!("expected play"),
+        }
+        let cli = Cli::try_parse_from(["horizon-launcher", "play"]).unwrap();
+        match cli.command {
+            Some(Cmd::Play { offline, name, .. }) => {
+                assert!(!offline, "an account launch without --offline");
+                assert!(name.is_none());
+            }
+            _ => panic!("expected play"),
+        }
+    }
+
+    /// The account gate is not quietly bypassed: `--offline` refuses a signed-in account, and a
+    /// local name means nothing without it.
+    #[test]
+    fn offline_play_refuses_an_account_and_a_name_without_it() {
+        assert!(Cli::try_parse_from([
+            "horizon-launcher",
+            "play",
+            "--offline",
+            "--account",
+            "Alex"
+        ])
+        .is_err());
+        assert!(Cli::try_parse_from(["horizon-launcher", "play", "--name", "Steve"]).is_err());
     }
 
     #[test]
