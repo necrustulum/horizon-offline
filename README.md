@@ -164,6 +164,37 @@ Scores: 0 (absent), 0.25 (started), 0.5 (playable, major features missing), 0.75
 | Audio | 1 | None: the sound engine, sound events, music, situational music, ambience and subtitles match vanilla |
 | Block behaviours and ticking | 1 | None: block updates, random ticks, redstone, dispensers (6,000 cases), crafters (4,000), container spills (4,000), copper golems and the sculk family (435 scenarios) match |
 
+## This fork: files to watch when syncing
+
+This fork carries a few changes upstream does not take, so a sync of
+`horizon-rust/horizon` into `custom` can conflict in exactly these files ([FORK.md](FORK.md) has
+the branch and release flow).
+
+| File | What is this fork's |
+|---|---|
+| `launcher/src/cli.rs` | `play --offline` and `--name`, their conflict with `--account`/`--join`, `SETTING_KEYS` (`offline-play`, `ping`, `partner-offers`), `settings_json`, the Java-instance refusal, four tests |
+| `launcher/src/backend.rs` | `SignIn`, `client_with`/`client_with_gate`/`client_offline`, `apply_session`, `Settings::{expert_offline_play, heartbeat}`, `HORIZON_NO_HEARTBEAT` in `client_command`, `self_update_allowed_from`, `Msg::Session { without_account }` |
+| `launcher/src/main.rs` | `expert_offline_row` and `partner_offers_row` with their calls in Settings, the branch in `start_client`, the `Msg::Session` arm |
+| `launcher/src/glass_settings.rs` | the same two rows in the glass look |
+| `launcher/src/collection.rs` | the ping switch instead of "Always on" |
+| `launcher/src/telemetry.rs` | the `PING` text ("Turn it off here…") |
+| `launcher/src/sources.rs`, `launcher/src/sources_tests.rs` | `shared_dir`, `libraries`/`assets` taken from different roots, `ElyPrismLauncher` in `known_folders`, its test |
+| `crates/horizon-prepare/src/artifacts.rs` | `is_native`, a missing native jar no longer stops a preparation, its test |
+
+Documentation:
+
+| File | What is this fork's |
+|---|---|
+| `docs/microsoft-account.md` | the "Offline play, on request" section |
+| `docs/telemetry.md` | the "I'm playing" ping as a switch |
+| `docs/launcher-commands.md` | generated: never edit it by hand — `HORIZON_WRITE_DOCS=1 cargo test --bins the_launcher_reference` |
+| `README.md`, `launcher/README.md` | one clause about offline play |
+| `launcher/lang/*.json` (86) | the keys of the new strings; most conflicts land here |
+
+After a merge: `cargo fmt --check`, `cargo check --locked --lib --bins`, `cargo test --lib`,
+`cargo test --bins` (the generated command reference is checked there), and
+`cargo clippy --all-targets --locked -- -D warnings`.
+
 ## Licence
 
 [MIT](LICENSE), for the project's original work; dependencies keep their own licences ([notices](THIRD_PARTY_NOTICES.md)). Horizon is made by [Ludovic Marie](https://lu4ovic.com) ([@ludovic111](https://github.com/ludovic111)) and [its contributors](https://github.com/horizon-rust/horizon/graphs/contributors); support it on [GitHub Sponsors](https://github.com/sponsors/ludovic111).
