@@ -45,12 +45,8 @@ fn kind_id(prefix: &str, kind: DataKind) -> &'static str {
     }
 }
 
-/// Where a switch would be: the ping has none.
-fn always_on(t: &Theme) -> Div {
-    caps(tr("Always on")).flex_none().text_color(t.muted)
-}
-
-/// The "I'm playing" ping on the first-run question, laid out as the switches' rows.
+/// The "I'm playing" ping on the first-run question, laid out as the switches' rows; the
+/// caller adds its switch.
 fn ping_row(t: &Theme) -> Div {
     div()
         .flex()
@@ -77,7 +73,6 @@ fn ping_row(t: &Theme) -> Div {
                         .child(tr(telemetry::PING)),
                 ),
         )
-        .child(always_on(t))
 }
 
 /// The exact JSON, in mono, scrolling inside a plate.
@@ -200,7 +195,16 @@ impl Launcher {
                     .border_t_1()
                     .border_color(t.rule)
                     .children(rows)
-                    .child(ping_row(&t)),
+                    .child(ping_row(&t).child({
+                        let on = self.settings.heartbeat();
+                        switch("ask-ping", on, &t).on_click(cx.listener(
+                            |this, _: &ClickEvent, _, cx| {
+                                this.settings.heartbeat = Some(!this.settings.heartbeat());
+                                this.save_settings();
+                                cx.notify();
+                            },
+                        ))
+                    })),
             )
             .child(text(theme::CAPTION).text_color(t.muted).child(tr(telemetry::NEVER)))
             .child(
@@ -295,11 +299,19 @@ impl Launcher {
                 &t,
             ));
         }
+        let ping_on = self.settings.heartbeat();
+        let ping = switch("data-ping", ping_on, &t).on_click(cx.listener(
+            |this, _: &ClickEvent, _, cx| {
+                this.settings.heartbeat = Some(!this.settings.heartbeat());
+                this.save_settings();
+                cx.notify();
+            },
+        ));
         list = list.child(index_row(
             telemetry::SWITCHES.len() + 1,
             tr(telemetry::PING_NAME),
             Some(div().child(tr(telemetry::PING)).into_any_element()),
-            Some(always_on(&t).into_any_element()),
+            Some(ping.into_any_element()),
             &t,
         ));
         let waiting = horizon_telemetry::outbox::pending(&telemetry::home()).len();

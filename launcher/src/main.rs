@@ -4061,6 +4061,7 @@ impl Launcher {
                     .child(self.home_background_row(cx))
                     .child(self.language_row(cx))
                     .child(self.while_playing_row(n + 3, cx))
+                    .child(self.partner_offers_row(n + 3, cx))
                     .child(index_row(
                         n + 3,
                         tr("Show the opening"),
@@ -4258,6 +4259,31 @@ impl Launcher {
                     .into_any_element(),
             ),
             Some(picker.into_any_element()),
+            &t,
+        )
+    }
+
+    /// Partner offers (`Settings::partner_hidden`): the partner's banner on the Servers page and
+    /// its card beside the lists. On unless the player hid them, here or with the banner's Hide.
+    fn partner_offers_row(&self, n: usize, cx: &mut Context<Self>) -> Div {
+        let t = self.theme;
+        let on = !self.settings.partner_hidden;
+        let toggle = switch("partner-offers", on, &t).on_click(cx.listener(
+            |this, _: &ClickEvent, _, cx| {
+                this.settings.partner_hidden = !this.settings.partner_hidden;
+                this.save_settings();
+                cx.notify();
+            },
+        ));
+        index_row(
+            n,
+            tr("Partner offers"),
+            Some(
+                div()
+                    .child(tr("Show the partner's banner on the Servers page and its card beside the lists. Off hides both."))
+                    .into_any_element(),
+            ),
+            Some(toggle.into_any_element()),
             &t,
         )
     }

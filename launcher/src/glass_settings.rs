@@ -437,6 +437,7 @@ impl Launcher {
             .child(self.home_background_row(cx))
             .child(self.language_row(cx))
             .child(self.while_playing_row(n, cx))
+            .child(self.partner_offers_row(n, cx))
             .child(index_row(
                 0,
                 tr("Show the opening"),

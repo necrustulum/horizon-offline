@@ -134,7 +134,6 @@
   "{version} available": "{version} ri fhaighinn",
   "Restarting": "Ag ath-thòiseachadh",
   "Not prepared. Horizon can download Minecraft {version} from Mojang for your account, or use your own install.": "Gun ullachadh. Faodaidh Horizon Minecraft {version} a luchdachadh sìos bho Mojang airson do chunntas, no an stàladh agad fhèin a chleachdadh.",
-  "Always on": "An-còmhnaidh air adhart",
   "{instance} is building: one build at a time.": "Tha {instance} a’ togail: aon togalach aig aon àm.",
   "These mods were made for different Horizon versions": "Chaidh na mòdan sin a dhèanamh airson diofar dhreachan Horizon",
   "Before the game": "Ron ghèam",
@@ -212,7 +211,6 @@
   "Nothing found that runs in Horizon. Show everything lists the rest.": "Chan eil dad air a lorg a tha a’ ruith ann an Horizon. Seall a h-uile càil a 'liostadh an còrr.",
   "The launcher goes down when the game starts, and comes back when it closes.": "Bidh an lannsair a’ dol sìos nuair a thòisicheas an geama, agus a’ tighinn air ais nuair a dhùineas e.",
   "GameMode": "Modh Gèam",
-  "While you play, the game sends an anonymous \"I'm playing\" ping once a minute, so the launcher can show how many people play Horizon right now. It holds: a random number made when the game starts and forgotten when it closes, the Horizon version, your OS (Linux, macOS or Windows), and whether you have a world open to LAN or friends. It doesn't hold: your account, your install ID, world or server names, or anything you do in the game, and the server doesn't keep your IP address. It is sent whatever the switches say.": "Fhad ‘s a bhios tu a’ cluich, bidh an geama a ’cur ping gun urra“ Tha mi a ’cluich” uair sa mhionaid, gus an urrainn don lannsair sealltainn cia mheud duine a bhios a ’cluich Horizon an-dràsta. Tha e a’ cumail: àireamh air thuaiream a chaidh a dhèanamh nuair a thòisicheas an geama agus a dhìochuimhnich nuair a dhùineas e, an tionndadh Horizon, an OS agad (Linux, macOS no Windows), agus a bheil saoghal agad a tha fosgailte do LAN no caraidean. Chan eil e a’ cumail: do chunntas, an ID stàlaidh agad, ainmean an t-saoghail no an fhrithealaiche, no rud sam bith a nì thu sa gheama, agus chan eil am frithealaiche a’ cumail do sheòladh IP. Tha e air a chuir ge bith dè a chanas na suidsichean.",
   "When you report it on Discord, attach the crash report file (or paste it with Copy report) and say what you were doing.": "Nuair a bheir thu cunntas air Discord, ceangail am faidhle aithisg tubaist (no cuir a-steach e le Copy report) agus abair na bha thu a’ dèanamh.",
   "Get my server": "Faigh mo fhrithealaiche",
   "New instance": "Eisimpleir ùr",
@@ -1241,5 +1239,8 @@
   "Native and content mod ids differ.": "Native and content mod ids differ.",
   "Expert mode: launch without a session": "Expert mode: launch without a session",
   "Play starts the game without a Microsoft session, as the name it keeps. For offline play, LAN and local test stands: online servers (online-mode=true) refuse it. Nothing checks that you own Minecraft: Java Edition.": "Play starts the game without a Microsoft session, as the name it keeps. For offline play, LAN and local test stands: online servers (online-mode=true) refuse it. Nothing checks that you own Minecraft: Java Edition.",
-  "the expert mode skipped the Microsoft sign-in, so online servers (online-mode=true) refuse this player": "the expert mode skipped the Microsoft sign-in, so online servers (online-mode=true) refuse this player"
+  "the expert mode skipped the Microsoft sign-in, so online servers (online-mode=true) refuse this player": "the expert mode skipped the Microsoft sign-in, so online servers (online-mode=true) refuse this player",
+  "Partner offers": "Partner offers",
+  "Show the partner's banner on the Servers page and its card beside the lists. Off hides both.": "Show the partner's banner on the Servers page and its card beside the lists. Off hides both.",
+  "While you play, the game sends an anonymous \"I'm playing\" ping once a minute, so the launcher can show how many people play Horizon right now. It holds: a random number made when the game starts and forgotten when it closes, the Horizon version, your OS (Linux, macOS or Windows), and whether you have a world open to LAN or friends. It doesn't hold: your account, your install ID, world or server names, or anything you do in the game, and the server doesn't keep your IP address. Turn it off here and the game sends nothing.": "While you play, the game sends an anonymous \"I'm playing\" ping once a minute, so the launcher can show how many people play Horizon right now. It holds: a random number made when the game starts and forgotten when it closes, the Horizon version, your OS (Linux, macOS or Windows), and whether you have a world open to LAN or friends. It doesn't hold: your account, your install ID, world or server names, or anything you do in the game, and the server doesn't keep your IP address. Turn it off here and the game sends nothing."
 }

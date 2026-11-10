@@ -844,7 +844,8 @@ enum Cmd {
     /// mods build with: performance is incremental, dev rebuilds a mod quickest for a slow game,
     /// release is slowest to build and slightly faster to play), offline-play on|off (the expert
     /// mode: Play starts the game with no Microsoft session, as the name the game keeps; online
-    /// servers refuse it)
+    /// servers refuse it), ping on|off (the anonymous "I'm playing" ping the game sends), and
+    /// partner-offers on|off (the partner's banner on the Servers page and its card)
     Settings {
         #[arg(value_parser = SETTING_KEYS)]
         key: Option<String>,
@@ -992,7 +993,7 @@ pub fn command() -> clap::Command {
 pub const AI_COMMANDS: [&str; 2] = ["mcp", "agent-config"];
 
 /// The keys `settings` sets.
-const SETTING_KEYS: [&str; 16] = [
+const SETTING_KEYS: [&str; 18] = [
     "selected-version",
     "minecraft-dir",
     "server-dir",
@@ -1009,6 +1010,8 @@ const SETTING_KEYS: [&str; 16] = [
     "native-profile",
     "native-cache-gib",
     "offline-play",
+    "ping",
+    "partner-offers",
 ];
 
 fn on_off(value: &str) -> Result<bool, String> {
@@ -1040,6 +1043,8 @@ fn set_setting(s: &mut backend::Settings, key: &str, value: &str) -> Result<(), 
         }
         "opening-animation" => s.skip_opening = !on_off(value)?,
         "offline-play" => s.expert_offline_play = on_off(value)?,
+        "ping" => s.heartbeat = Some(on_off(value)?),
+        "partner-offers" => s.partner_hidden = !on_off(value)?,
         "game-architecture" => {
             let choice = backend::GameArchitecture::parse(value).ok_or_else(|| {
                 tr("Say auto, x64 or arm64 for the game architecture.").to_string()
@@ -1144,6 +1149,8 @@ fn settings_json(s: &backend::Settings) -> serde_json::Value {
         "native_profile": native_mods::Profile::chosen(s).name(),
         "native_cache_gib": s.native_cache_gib.unwrap_or(native_mods::DEFAULT_CACHE_GIB),
         "offline_play": s.expert_offline_play,
+        "ping": s.heartbeat(),
+        "partner_offers": !s.partner_hidden,
         "no_ai": backend::no_ai(),
     })
 }
@@ -3731,6 +3738,19 @@ mod tests {
             set_setting(&mut settings, "offline-play", "yes").unwrap_err(),
             "yes: say on or off"
         );
+    }
+
+    #[test]
+    fn settings_takes_the_data_switches() {
+        let mut settings = backend::Settings::default();
+        set_setting(&mut settings, "ping", "off").unwrap();
+        assert!(!settings.heartbeat(), "the ping is the game's sending");
+        set_setting(&mut settings, "ping", "on").unwrap();
+        assert!(settings.heartbeat());
+        set_setting(&mut settings, "partner-offers", "off").unwrap();
+        assert!(settings.partner_hidden);
+        set_setting(&mut settings, "partner-offers", "on").unwrap();
+        assert!(!settings.partner_hidden);
     }
 
     #[test]

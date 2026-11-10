@@ -2938,6 +2938,11 @@ pub fn client_command(tag: &str) -> Command {
             "{ application.name = \"Horizon\" media.role = \"Game\" }",
         );
     }
+    // The player turned the anonymous "I'm playing" ping off (`Settings::heartbeat`): the game
+    // sends nothing (horizon-heartbeat), whatever the switches for reports say.
+    if !Settings::load().heartbeat() {
+        cmd.env("HORIZON_NO_HEARTBEAT", "1");
+    }
     cmd
 }
 
@@ -4515,6 +4520,11 @@ pub struct Settings {
     /// first-run question, or on the Play page once if they answered that before it existed.
     #[serde(default)]
     pub ping_notice_seen: bool,
+    /// The anonymous "I'm playing" ping the game sends (`horizon_heartbeat`, docs/telemetry.md).
+    /// On unless the player turns it off in Settings: the launcher then starts the game with
+    /// `HORIZON_NO_HEARTBEAT=1`, so nothing is sent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heartbeat: Option<bool>,
     /// The player without an account that owns the game has read, once, why the launcher needs
     /// one now (the owner gate's screen).
     #[serde(default)]
@@ -4639,6 +4649,11 @@ impl Settings {
     /// Whether old versions are deleted after an install.
     pub fn auto_prune(&self) -> bool {
         self.prune_old_versions.unwrap_or(true)
+    }
+    /// Whether the game sends the anonymous "I'm playing" ping (`horizon_heartbeat`): on unless
+    /// the player turned it off in Settings.
+    pub fn heartbeat(&self) -> bool {
+        self.heartbeat.unwrap_or(true)
     }
     /// The plates' white as a fraction (0 to 0.16): [`glass`](Self::glass) in percent.
     pub fn glass_tint(&self) -> f32 {
@@ -7247,6 +7262,22 @@ pub fn {f}("
             text,
             "Title\n\nSome words and a link (https://x.y).\n\n- one\n- two\n"
         );
+    }
+
+    /// The anonymous "I'm playing" ping is on unless the player turned it off, and a settings
+    /// file that says nothing about it (older launchers) keeps it on.
+    #[test]
+    fn the_playing_ping_is_on_unless_turned_off() {
+        assert!(Settings::default().heartbeat());
+        assert!(!Settings::parse(r#"{"heartbeat":false}"#).heartbeat());
+        assert!(Settings::parse(r#"{"heartbeat":true}"#).heartbeat());
+        assert!(Settings::parse("{}").heartbeat());
+        // Off is saved, so the next start keeps it off.
+        let off = Settings {
+            heartbeat: Some(false),
+            ..Settings::default()
+        };
+        assert!(!Settings::parse(&serde_json::to_string(&off).unwrap()).heartbeat());
     }
 
     #[test]
