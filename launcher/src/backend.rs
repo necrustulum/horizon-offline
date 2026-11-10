@@ -3604,9 +3604,20 @@ fn launcher_asset_running_from(appimage: bool) -> Option<&'static str> {
     }
 }
 
-/// Development builds and `HORIZON_LAUNCHER_NO_SELF_UPDATE` never replace themselves.
+/// Whether this launcher may replace itself. Only a build the release workflow made says which
+/// release it is (`HORIZON_LAUNCHER_TAG`); a local `cargo build` carries no tag, so it keeps the
+/// code it was built from instead of being replaced by a Nightly. A branch build has an empty
+/// tag too. `HORIZON_LAUNCHER_NO_SELF_UPDATE` still turns it off for a release.
 pub fn self_update_allowed() -> bool {
-    !cfg!(debug_assertions) && std::env::var_os("HORIZON_LAUNCHER_NO_SELF_UPDATE").is_none()
+    !cfg!(debug_assertions)
+        && self_update_allowed_from(
+            option_env!("HORIZON_LAUNCHER_TAG"),
+            std::env::var_os("HORIZON_LAUNCHER_NO_SELF_UPDATE").is_some(),
+        )
+}
+
+fn self_update_allowed_from(tag: Option<&str>, opted_out: bool) -> bool {
+    tag.is_some_and(|tag| !tag.trim().is_empty()) && !opted_out
 }
 
 /// The version in `horizon-launcher --version`'s output (`horizon-launcher 0.1.5`).
@@ -5833,6 +5844,24 @@ pub fn {f}("
         assert_eq!(
             own_tag_of(None, None),
             format!("launcher@{}", env!("CARGO_PKG_VERSION"))
+        );
+    }
+
+    /// Only a build the release workflow made replaces itself: a local `cargo build` has no
+    /// `HORIZON_LAUNCHER_TAG`, and a branch build's is empty, so both keep their own code instead
+    /// of becoming a Nightly. The environment still opts a release out.
+    #[test]
+    fn only_a_release_build_replaces_itself() {
+        assert!(
+            !self_update_allowed_from(None, false),
+            "a build from source keeps the code it was built from"
+        );
+        assert!(!self_update_allowed_from(Some(""), false), "a branch build");
+        assert!(!self_update_allowed_from(Some("  "), false));
+        assert!(self_update_allowed_from(Some("launcher@0.2.81"), false));
+        assert!(
+            !self_update_allowed_from(Some("launcher@0.2.81"), true),
+            "HORIZON_LAUNCHER_NO_SELF_UPDATE still wins"
         );
     }
 

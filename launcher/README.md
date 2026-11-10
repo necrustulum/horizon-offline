@@ -308,8 +308,10 @@ SHA-256 again before anything goes in; when the launcher in place is already tha
 nothing. Servers keep running through **Update**. A copy that can't replace itself says so at once and offers
 **Download again** (the website's install page): one in a read-only folder (the disk image, or the read-only copy
 macOS runs a downloaded app from until it is moved to Applications), or on Windows one running from the temporary
-folder, as a program opened inside a `.zip` does. `horizon-launcher update` replaces it at once. Development builds and
-`HORIZON_LAUNCHER_NO_SELF_UPDATE=1` never replace themselves.
+folder, as a program opened inside a `.zip` does. `horizon-launcher update` replaces it at once. A build from
+source never replaces itself, and neither does a build with `HORIZON_LAUNCHER_NO_SELF_UPDATE=1`: only a release
+built by `launcher.yml` carries its `HORIZON_LAUNCHER_TAG`, and that is what says it may update. A local
+`cargo build` keeps the code it was built from instead of becoming a Nightly at its first start.
 
 On Linux the release also comes as an AppImage, `horizon-launcher-linux-x86_64.AppImage`: one file
 to download, make executable and run, with no installation and no `libfuse2` (its runtime mounts
