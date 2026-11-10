@@ -122,6 +122,7 @@ pub fn known_folders(os: Os, f: &Folders) -> Vec<(&'static str, PathBuf)> {
                 "Prism Launcher",
                 flatpak("org.prismlauncher.PrismLauncher", "data/PrismLauncher"),
             ),
+            ("ElyPrismLauncher", f.data.join("ElyPrismLauncher")),
             ("MultiMC", f.data.join("multimc")),
             ("Modrinth App", f.data.join("ModrinthApp")),
             (
@@ -138,6 +139,7 @@ pub fn known_folders(os: Os, f: &Folders) -> Vec<(&'static str, PathBuf)> {
         Os::MacOs => vec![
             (OFFICIAL, f.data.join("minecraft")),
             ("Prism Launcher", f.data.join("PrismLauncher")),
+            ("ElyPrismLauncher", f.data.join("ElyPrismLauncher")),
             ("MultiMC", f.data.join("MultiMC")),
             ("Modrinth App", f.data.join("ModrinthApp")),
             ("ATLauncher", f.data.join("ATLauncher")),
@@ -146,6 +148,7 @@ pub fn known_folders(os: Os, f: &Folders) -> Vec<(&'static str, PathBuf)> {
         Os::Windows => vec![
             (OFFICIAL, f.data.join(".minecraft")),
             ("Prism Launcher", f.data.join("PrismLauncher")),
+            ("ElyPrismLauncher", f.data.join("ElyPrismLauncher")),
             ("Modrinth App", f.data.join("ModrinthApp")),
             ("ATLauncher", f.data.join("ATLauncher")),
             ("Dawn Client", f.data.join(".dawn")),
@@ -266,6 +269,7 @@ fn launcher_of(path: &Path) -> Option<&'static str> {
         .filter_map(|name| name.to_str())
         .find_map(|name| match name {
             "PrismLauncher" => Some("Prism Launcher"),
+            "ElyPrismLauncher" | "PineconeMC" => Some("ElyPrismLauncher (PineconeMC)"),
             "multimc" | "MultiMC" => Some("MultiMC"),
             "ModrinthApp" | "com.modrinth.theseus" => Some("the Modrinth App"),
             "atlauncher" | "ATLauncher" => Some("ATLauncher"),
@@ -408,7 +412,26 @@ pub fn resolve(
     if found.official_layout(&pins.version) {
         return Ok(Resolved::Folder(found.base));
     }
-    link_official_layout(&found, pins, linked, fetch, log)?;
+    // A launcher may keep `versions` and the shared `libraries`/`assets` apart (ElyPrismLauncher
+    // with its Minecraft folder moved to another drive): the version is in `found.base`, and the
+    // shared folders are looked for there first, then in the chosen folder, a folder above it and
+    // every launcher's default folder.
+    let mut shared: Vec<PathBuf> = vec![found.base.clone()];
+    let mut push = |dir: &Path| {
+        if dir.is_dir() && !shared.iter().any(|s| same(s, dir)) {
+            shared.push(dir.to_path_buf());
+        }
+    };
+    for dir in chosen.ancestors().take(4) {
+        push(dir);
+    }
+    if let Some(root) = instance_root(chosen).or_else(|| dawn_root(chosen)) {
+        push(&root);
+    }
+    for (_, dir) in known {
+        push(dir);
+    }
+    link_official_layout(&found, &shared, pins, linked, fetch, log)?;
     Ok(Resolved::Folder(linked.to_path_buf()))
 }
 
@@ -459,11 +482,21 @@ pub(crate) fn write_file(path: &Path, data: &[u8]) -> Result<(), String> {
         .map_err(error)
 }
 
+/// The first of `roots` that has the shared folder `name` (`libraries`, `assets`): a launcher can
+/// keep them apart from the folder that holds `versions`.
+fn shared_dir(roots: &[PathBuf], name: &str) -> Option<PathBuf> {
+    roots
+        .iter()
+        .map(|root| root.join(name))
+        .find(|dir| dir.is_dir())
+}
+
 /// Links a launcher's files into the official layout in `linked`: the client jar as
-/// `versions/<v>/<v>.jar`, its `libraries` and `assets`, and the pinned version JSON, the
-/// launcher's own when it keeps it, else Mojang's.
+/// `versions/<v>/<v>.jar`, its `libraries` and `assets` (from whichever of `shared` has them), and
+/// the pinned version JSON, the launcher's own when it keeps it, else Mojang's.
 fn link_official_layout(
     found: &Found,
+    shared: &[PathBuf],
     pins: &Pins,
     linked: &Path,
     fetch: Fetch,
@@ -479,14 +512,28 @@ fn link_official_layout(
         fetch_manifest(pins, &manifest, fetch, log)?;
     }
     link(&found.client, &versions.join(format!("{v}.jar")))?;
-    for dir in ["libraries", "assets"] {
-        let source = found.base.join(dir);
-        let target = linked.join(dir);
-        if source.is_dir() {
-            link(&source, &target)?;
-        } else {
-            unlink(&target)?;
+    match shared_dir(shared, "libraries") {
+        Some(source) => {
+            log(format!("Using libraries from {}", source.display()));
+            link(&source, &linked.join("libraries"))?;
         }
+        None => {
+            let looked: Vec<String> = shared
+                .iter()
+                .map(|root| root.join("libraries").display().to_string())
+                .collect();
+            // Not fatal here: preparation names the library it cannot find where it needs it.
+            log(format!("No libraries folder in {}", looked.join(", ")));
+            unlink(&linked.join("libraries"))?;
+        }
+    }
+    match shared_dir(shared, "assets") {
+        Some(source) => {
+            log(format!("Using assets from {}", source.display()));
+            link(&source, &linked.join("assets"))?;
+        }
+        // Not fatal: preparation reports the assets it cannot find where it needs them.
+        None => unlink(&linked.join("assets"))?,
     }
     Ok(())
 }

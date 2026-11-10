@@ -939,6 +939,17 @@ fn runs_without(name: &str) -> bool {
         && parts.nth(1).is_some()
 }
 
+/// A native-only jar (`org.lwjgl:lwjgl-freetype:3.4.3:natives-windows`): Java's exporters and data
+/// generator, the only Java Horizon runs, never load one (they carry no native code Horizon
+/// calls), so a launcher copy that keeps them elsewhere, or never downloaded them, prepares
+/// without them. LWJGL 3.4 moved natives to their own artifact name and ElyPrism/PineconeMC
+/// follows it; the version JSON still names the classifier form Mojang serves.
+fn is_native(name: &str) -> bool {
+    name.rsplit(':')
+        .next()
+        .is_some_and(|classifier| classifier.starts_with("natives-"))
+}
+
 /// A relative path with only normal components and forward slashes, from a manifest or bundle.
 pub(crate) fn safe_relative(path: &str) -> Option<PathBuf> {
     if path.contains('\\') || path.starts_with('/') {
@@ -1116,12 +1127,23 @@ pub fn import(
         let relative = safe_relative(path).ok_or("Unsafe library path")?;
         let source = library_in(&files.libraries, name, &relative);
         let destination = lock.directory.join("libraries/client").join(&relative);
-        if runs_without(name) && !source.is_file() && !destination.exists() {
-            log(&format!(
-                "No {name} in {}: the game runs without it",
-                files.libraries.display()
-            ));
-            continue;
+        if !source.is_file() && !destination.exists() {
+            if runs_without(name) {
+                log(&format!(
+                    "No {name} in {}: the game runs without it",
+                    files.libraries.display()
+                ));
+                continue;
+            }
+            if is_native(name) {
+                // Exported data never calls native code, and a launcher may keep these under
+                // another artifact name (LWJGL 3.4, Prism/ElyPrism) or not at all.
+                log(&format!(
+                    "No {name} natives in {}: the exported data needs none",
+                    files.libraries.display()
+                ));
+                continue;
+            }
         }
         imports.push((source, destination, sha1));
     }
@@ -1728,6 +1750,29 @@ mod tests {
                 "{unsafe_name}"
             );
         }
+    }
+
+    /// LWJGL 3.4's natives: the version JSON names the classifier Mojang serves
+    /// (`org.lwjgl:lwjgl-freetype:3.4.3:natives-windows`), while Prism/ElyPrism keeps the jar
+    /// under the natives' own artifact name. `is_native` is what lets a preparation go on when a
+    /// launcher has neither: the exported data calls no native code.
+    #[test]
+    fn lwjgl_natives_are_found_under_prisms_name_or_not_needed() {
+        let fixture = Imports::new();
+        let minecraft = &fixture.directory;
+        let official =
+            Path::new("org/lwjgl/lwjgl-freetype/3.4.3/lwjgl-freetype-3.4.3-natives-windows.jar");
+        let name = "org.lwjgl:lwjgl-freetype:3.4.3:natives-windows";
+        let prism = minecraft.join(
+            "libraries/org/lwjgl/lwjgl-freetype-natives-windows/3.4.3/lwjgl-freetype-natives-windows-3.4.3.jar",
+        );
+        fs::create_dir_all(prism.parent().unwrap()).unwrap();
+        fs::write(&prism, b"natives").unwrap();
+        assert_eq!(launcher_library(minecraft, name, official), prism);
+        assert!(is_native(name), "the classifier form Mojang serves");
+        assert!(is_native("com.mojang:jtracy:1.14.38:natives-windows"));
+        assert!(!is_native("org.lwjgl:lwjgl-freetype:3.4.3"));
+        assert!(!is_native("com.mojang:brigadier:1.3.11"));
     }
 
     /// A launcher that rewrites Mojang's version file in the official layout (HMCL, PCL: the same

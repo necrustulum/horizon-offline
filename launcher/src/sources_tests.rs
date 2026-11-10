@@ -376,6 +376,37 @@ fn a_prism_instances_folder_finds_the_launcher_root() {
     }
 }
 
+/// ElyPrismLauncher with its Minecraft folder moved to another drive: `versions` in the chosen
+/// folder, the shared `libraries`/`assets` in the launcher's own folder, which is not above it.
+/// The version is found where it is, the shared folders in the launcher's default folder.
+#[test]
+fn versions_and_libraries_may_live_in_different_folders() {
+    let s = Scratch::new("split-roots");
+    s.write("D/govno_minecraft/Minecraft/versions/26.3/26.3.jar", CLIENT);
+    let appdata = s.0.join("AppData/Roaming/ElyPrismLauncher");
+    s.write(
+        "AppData/Roaming/ElyPrismLauncher/libraries/org/lib/1/lib-1.jar",
+        b"lib",
+    );
+    s.write(
+        "AppData/Roaming/ElyPrismLauncher/assets/indexes/30.json",
+        b"{}",
+    );
+    let game = s.0.join("D/govno_minecraft/Minecraft");
+    let linked = s.0.join("linked");
+    let got = resolve_with(
+        &game,
+        &[("ElyPrismLauncher", appdata.clone())],
+        &linked,
+        &Mojang::new(MANIFEST),
+    )
+    .unwrap();
+    assert_eq!(got, linked);
+    assert!(linked.join("versions/26.3/26.3.jar").is_file());
+    assert!(linked.join("libraries/org/lib/1/lib-1.jar").is_file());
+    assert!(linked.join("assets/indexes/30.json").is_file());
+}
+
 #[test]
 fn a_multimc_instances_folder_finds_the_launcher_root() {
     let s = Scratch::new("multimc-tree");
