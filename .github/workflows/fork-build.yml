@@ -1,0 +1,135 @@
+name: fork launcher
+
+# Builds this fork's launcher for the systems players have, on GitHub's own runners: no self-hosted
+# machine, no release signing key, nothing from the upstream repository but the code. Upstream's
+# launcher.yml is left alone, so a sync from horizon-rust/horizon never fights this file.
+#
+#   push to `custom` (the branch with this fork's changes) → a build, kept as artifacts for 14 days
+#   tag `fork-*` (e.g. fork-2026.11.10)                       → the same builds, published as a prerelease
+#   Actions → fork launcher → Run workflow                    → a build now
+#
+# No HORIZON_LAUNCHER_TAG is set, so the built launcher does not replace itself with an upstream
+# Nightly (backend::self_update_allowed): install a newer fork build by downloading it.
+# The game itself is not built here: that needs the maintainer's own Minecraft jars and exporters.
+# This launcher installs the official Nightly, whose checksums are signed with the upstream key it
+# already carries.
+
+on:
+  push:
+    branches: [custom]
+    tags: ['fork-*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-launcher-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-latest
+            asset: horizon-launcher-linux-x86_64.tar.gz
+            rustflags: ''
+          - name: windows-x64
+            os: windows-latest
+            asset: horizon-launcher-windows-x64.zip
+            rustflags: -C target-feature=+crt-static
+          - name: macos-arm64
+            os: macos-14
+            asset: horizon-launcher-macos-arm64.zip
+            rustflags: ''
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: launcher
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: launcher
+          shared-key: fork-launcher-${{ matrix.name }}
+      - name: Linux libraries GPUI links to
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-x11-dev libwayland-dev libx11-xcb-dev \
+            libfontconfig-dev libvulkan-dev libasound2-dev patchelf
+      - name: Build
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags }}
+        run: |
+          set -euo pipefail
+          # GPUI compiles its Metal shaders at build time only with the full Metal toolchain;
+          # GitHub's macOS images have Xcode, but runtime shaders always work.
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            export LAUNCHER_FEATURES=gpui_platform/runtime_shaders
+          fi
+          cargo build --release --locked ${LAUNCHER_FEATURES:+--features "$LAUNCHER_FEATURES"}
+      - name: Package
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cd target/release
+          case "$RUNNER_OS" in
+            Windows) 7z a ../../out/${{ matrix.asset }} horizon-launcher.exe ;;
+            macOS)   zip -q ../../out/${{ matrix.asset }} horizon-launcher ;;
+            *)       tar czf ../../out/${{ matrix.asset }} horizon-launcher ;;
+          esac
+          ls -l ../../out
+      - name: The build starts
+        env:
+          HORIZON_LAUNCHER_NO_SELF_UPDATE: '1'
+        run: |
+          set -euo pipefail
+          exe=target/release/horizon-launcher
+          [[ "$RUNNER_OS" == "Windows" ]] && exe="$exe.exe"
+          export HORIZON_LAUNCHER_HOME="${RUNNER_TEMP//\\//}/fork-smoke"
+          rm -rf "$HORIZON_LAUNCHER_HOME"
+          "$PWD/$exe" --version
+          "$PWD/$exe" play --help | grep -q -- '--offline'
+          "$PWD/$exe" settings | grep -q 'ping:'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.asset }}
+          path: launcher/out/*
+          retention-days: 14
+
+  release:
+    name: publish fork-* prerelease
+    if: startsWith(github.ref, 'refs/tags/fork-')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          prerelease: true
+          generate_release_notes: true
+          body: |
+            This fork's launcher, built from `${{ github.sha }}` on GitHub's runners.
+
+            It installs the official Horizon Nightly; the game is not built here.

@@ -1,0 +1,26 @@
+name: fork sync
+
+# Keeps this fork's `main` a copy of horizon-rust/horizon, without a pull request: GitHub's own
+# "merge upstream" does the fast-forward. `custom` (this fork's changes) is never touched here:
+# merge `main` into it by hand when a sync lands, so a conflict is resolved with a real diff.
+#
+# It only works while `main` has no commits of its own (FORK.md). A fork whose main was edited
+# fails here on purpose: that is the sign to move those commits to `custom` first.
+
+on:
+  schedule:
+    - cron: '17 3 * * *'   # 03:17 UTC, before the day's work
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Fast-forward main from horizon-rust/horizon
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh repo sync "${{ github.repository }}" --branch main --source horizon-rust/horizon
