@@ -8,6 +8,9 @@ name: fork launcher
 #   tag `fork-*` (e.g. fork-2026.11.10)                       → the same builds, published as a prerelease
 #   Actions → fork launcher → Run workflow                    → a build now
 #
+# Linux and Windows must build for a release to be published; macOS is optional (a macOS image
+# that GitHub retires, as macos-14 was, fails that job only, and the other two still ship).
+#
 # No HORIZON_LAUNCHER_TAG is set, so the built launcher does not replace itself with an upstream
 # Nightly (backend::self_update_allowed): install a newer fork build by downloading it.
 # The game itself is not built here: that needs the maintainer's own Minecraft jars and exporters.
@@ -43,9 +46,12 @@ jobs:
             asset: horizon-launcher-windows-x64.zip
             rustflags: -C target-feature=+crt-static
           - name: macos-arm64
-            os: macos-14
+            os: macos-26
             asset: horizon-launcher-macos-arm64.zip
             rustflags: ''
+    # A macOS job that fails (its image retired, its toolchain moved) does not stop the release:
+    # the two launchers players mostly use still ship.
+    continue-on-error: ${{ matrix.name == 'macos-arm64' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     defaults:
@@ -109,7 +115,7 @@ jobs:
 
   release:
     name: publish fork-* prerelease
-    if: startsWith(github.ref, 'refs/tags/fork-')
+    if: always() && startsWith(github.ref, 'refs/tags/fork-')
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -119,6 +125,14 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - name: Linux and Windows built
+        # macOS is optional; these two are what players download.
+        run: |
+          set -euo pipefail
+          ls -l dist
+          for need in linux windows; do
+            compgen -G "dist/*$need*" > /dev/null || { echo "::error::no $need launcher built"; exit 1; }
+          done
       - name: Checksums
         run: |
           cd dist
@@ -133,3 +147,4 @@ jobs:
             This fork's launcher, built from `${{ github.sha }}` on GitHub's runners.
 
             It installs the official Horizon Nightly; the game is not built here.
+            The macOS archive is included when its runner built it.
